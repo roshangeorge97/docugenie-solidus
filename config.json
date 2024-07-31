@@ -1,0 +1,10 @@
+{
+    "service_name": "My-App",
+    "ai_app_version": "0.0.1",
+    "api_version": "1.0.1",
+    "debug": true,
+    "threading_timeout": 30
+  }
+
+  
+  

@@ -1,0 +1,15 @@
+langchain
+langchain-community
+beautifulsoup4
+faiss-cpu
+# faiss-gpu
+chromadb
+validators
+sentence_transformers
+typing-extensions==4.8.0
+unstructured
+gradio
+fastapi
+uvicorn
+requests
+python-dotenv
