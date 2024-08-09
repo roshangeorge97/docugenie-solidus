@@ -1,3 +1,4 @@
+import threading
 import time
 import datetime
 import uuid
@@ -514,17 +515,18 @@ with gr.Blocks() as demo:
 
 # Run both FastAPI and Gradio
 if __name__ == "__main__":
-    import threading
+    import nest_asyncio
+    from fastapi.middleware.cors import CORSMiddleware
     
-    def run_fastapi():
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+    nest_asyncio.apply()
     
-    def run_gradio():
-        demo.launch(share=False)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     
-    # Start FastAPI in a separate thread
-    fastapi_thread = threading.Thread(target=run_fastapi)
-    fastapi_thread.start()
-    
-    # Run Gradio in the main thread
-    run_gradio()
+    gr.mount_gradio_app(app, demo, path="/")
+    uvicorn.run(app, host="0.0.0.0", port=8000)
