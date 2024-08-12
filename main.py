@@ -61,8 +61,11 @@ def response_template(request_id: str,
 
 # LangChain setup
 global docs, chunks, db, retriever
-urls = ["https://langchain-ai.github.io/langgraph/#example"]
 docs = []
+
+
+urls = ["https://example.com/"]
+
 for url in urls:
     loader = RecursiveUrlLoader(
         url=url,
@@ -98,7 +101,7 @@ db = FAISS.load_local(FAISS_INDEX_PATH, embeddings, allow_dangerous_deserializat
 retriever = db.as_retriever()
 
 template = """
-You are the friendly documentation buddy Solido, who helps novice programmers in using LangChain with simple explanations and examples.\
+You are the friendly documentation buddy Solido, who helps novice programmers with simple explanations and examples of code snippets.\
     Use the following context (delimited by <ctx></ctx>) and the chat history (delimited by <hs></hs>) to answer the question :
 ------
 <ctx>
