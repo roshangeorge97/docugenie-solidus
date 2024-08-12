@@ -24,6 +24,7 @@ import time
 import uuid
 from dotenv import load_dotenv
 import os
+qa = None
 
 # Constants
 load_dotenv()
@@ -35,6 +36,7 @@ SUPPORTED_METHOD = ["ask", "upload_links"]
 app = FastAPI()
 task_status = {}
 task_results = {} 
+
     
 # Helper functions
 def response_template(request_id: str, 
@@ -58,6 +60,7 @@ def response_template(request_id: str,
     return response_data
 
 # LangChain setup
+global docs, chunks, db, retriever
 urls = ["https://langchain-ai.github.io/langgraph/#example"]
 docs = []
 for url in urls:
@@ -112,6 +115,8 @@ Answer:
 
 prompt = PromptTemplate.from_template(template=template)
 memory = ConversationBufferMemory(memory_key="history", input_key="question")
+
+
 
 qa = RetrievalQA.from_chain_type(
     llm=model_id,
@@ -287,6 +292,7 @@ async def call_endpoint(request: Request, x_user_id: str = Header(None)):
 
 # Define your task processing function
 def process_task(task_id, request_data, user_id, request_id):
+    global qa, docs, chunks, db, retriever
     start_time = time.time()
     task_status[task_id] = StatusCodes.INPROGRESS  # Update status to INPROGRESS
 
@@ -302,7 +308,6 @@ def process_task(task_id, request_data, user_id, request_id):
             
         elif method == "upload_links":
             urls = payload.get('urls', [])
-            global docs, chunks, db, retriever
             
             docs = []
             for url in urls:
@@ -449,13 +454,12 @@ async def result(request: Request, task_request: TaskRequest, x_user_id: str = H
 def infer(question, history):
     formatted_history = [(str(q) if q is not None else "", str(a) if a is not None else "") for q, a in history]
     
-    response = requests.post("http://localhost:8000/ask", 
-                             json={"userToken": "dummy_token",
-                                   "requestId": "dummy_id",
-                                   "request": {
-                                       "method": "ask",
-                                       "payload": {"query": question, "history": formatted_history}
-                                   }})
+    response = requests.post("http://localhost:8000/call", 
+                             headers={"x-user-id": "dummy_user_id", "x-request-id": str(uuid.uuid4())},
+                             json={
+                                 "method": "ask",
+                                 "payload": {"query": question, "history": formatted_history}
+                             })
     return response.json()
 
 def add_text(history, text):
@@ -464,33 +468,59 @@ def add_text(history, text):
 
 def bot(history):
     response = infer(history[-1][0], history[:-1])
-    if 'response' in response and 'result' in response['response']:
-        history[-1][1] = response['response']['result']
+    if 'response' in response and 'taskId' in response['response']:
+        task_id = response['response']['taskId']
+        # Poll for result
+        while True:
+            result_response = requests.post("http://localhost:8000/result",
+                                            headers={"x-user-id": "dummy_user_id", "x-request-id": str(uuid.uuid4())},
+                                            json={"taskId": task_id})
+            result_data = result_response.json()
+            if result_data['error_code']['status'] == StatusCodes.SUCCESS:
+                # Check the structure of result_data and extract the result accordingly
+                if isinstance(result_data['response'], dict) and 'data' in result_data['response']:
+                    if isinstance(result_data['response']['data'], dict) and 'result' in result_data['response']['data']:
+                        history[-1][1] = result_data['response']['data']['result']
+                    else:
+                        history[-1][1] = str(result_data['response']['data'])
+                else:
+                    history[-1][1] = str(result_data['response'])
+                break
+            elif result_data['error_code']['status'] in [StatusCodes.ERROR, StatusCodes.UNSUPPORTED]:
+                history[-1][1] = f"Error: {result_data['error_code']['reason']}"
+                break
+            time.sleep(1)  # Wait for 1 second before polling again
     else:
         history[-1][1] = "Sorry, I couldn't generate a response."
     return history
 
 def upload_links_ui(links):
     urls = [url.strip() for url in links.split(',')]
-    response = requests.post("http://localhost:8000/upload_links", 
+    response = requests.post("http://localhost:8000/call", 
+                             headers={"x-user-id": "dummy_user_id", "x-request-id": str(uuid.uuid4())},
                              json={
-                                 "userToken": "dummy_token",
-                                 "requestId": "dummy_id",
-                                 "request": {
-                                     "method": "upload_links",
-                                     "payload": {
-                                         "urls": urls
-                                     }
+                                 "method": "upload_links",
+                                 "payload": {
+                                     "urls": urls
                                  }
                              })
     response_data = response.json()
     
-    if 'response' in response_data and 'message' in response_data['response']:
-        return response_data['response']['message']
-    elif 'errorCode' in response_data and 'message' in response_data['errorCode']:
-        return f"Error: {response_data['errorCode']['message']}"
+    if 'response' in response_data and 'taskId' in response_data['response']:
+        task_id = response_data['response']['taskId']
+        # Poll for result
+        while True:
+            result_response = requests.post("http://localhost:8000/result",
+                                            headers={"x-user-id": "dummy_user_id", "x-request-id": str(uuid.uuid4())},
+                                            json={"taskId": task_id})
+            result_data = result_response.json()
+            if result_data['error_code']['status'] == StatusCodes.SUCCESS:
+                return result_data['response']['data']['message']
+            elif result_data['error_code']['status'] in [StatusCodes.ERROR, StatusCodes.UNSUPPORTED]:
+                return f"Error: {result_data['error_code']['reason']}"
+            time.sleep(1)  # Wait for 1 second before polling again
     else:
-        return str(response_data)
+        return f"Error: {response_data.get('error_code', {}).get('reason', 'Unknown error')}"
 
 with gr.Blocks() as demo:
     with gr.Column(elem_id="col-container"):
