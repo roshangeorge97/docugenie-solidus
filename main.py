@@ -37,27 +37,6 @@ app = FastAPI()
 task_status = {}
 task_results = {} 
 
-    
-# Helper functions
-def response_template(request_id: str, 
-                      trace_id: str, 
-                      process_duration: int,
-                      isResponseImmediate: bool,
-                      response: dict,
-                      error_code: dict):
-    now = datetime.datetime.now().isoformat()
-    response_data = {
-        "requestId": request_id,
-        "traceId": trace_id,
-        "apiVersion": API_VERSION,
-        "service": SERVICE_NAME,
-        "datetime": now,
-        "isResponseImmediate": isResponseImmediate,
-        "processDuration": process_duration,
-        "response": response,
-        "errorCode": error_code,
-    }
-    return response_data
 
 # LangChain setup
 global docs, chunks, db, retriever
@@ -120,7 +99,6 @@ prompt = PromptTemplate.from_template(template=template)
 memory = ConversationBufferMemory(memory_key="history", input_key="question")
 
 
-
 qa = RetrievalQA.from_chain_type(
     llm=model_id,
     chain_type="stuff",
@@ -134,102 +112,103 @@ qa = RetrievalQA.from_chain_type(
     }
 )
 
+
+# @app.post("/ask")
+# async def ask_question(request: LangChainRequestCall):
+#     start_time = time.time()
+#     try:
+#         history = [(q, a) for q, a in request.request.payload.history if q or a]
+#         response = qa({"query": request.request.payload.query, "history": history})
+#         process_duration = int((time.time() - start_time) * 1000)
+#         result = response.get('result', response.get('answer', str(response)))
+        
+#         return response_template(
+#             request_id=request.requestId,
+#             trace_id=str(uuid.uuid4()),
+#             process_duration=process_duration,
+#             isResponseImmediate=True,
+#             response={"result": result},
+#             error_code={}
+#         )
+#     except Exception as e:
+#         process_duration = int((time.time() - start_time) * 1000)
+#         return response_template(
+#             request_id=request.requestId,
+#             trace_id=str(uuid.uuid4()),
+#             process_duration=process_duration,
+#             isResponseImmediate=True,
+#             response={},
+#             error_code={"code": "ERROR", "message": str(e)}
+#         )
+
+# @app.post("/upload_links")
+# async def upload_links(request: UploadRequestCall):
+#     start_time = time.time()
+#     try:
+#         links = request.request.payload.urls
+#         global docs, chunks, db, retriever, qa
+        
+#         docs = []
+#         for url in links:
+#             loader = RecursiveUrlLoader(url=url, max_depth=9, extractor=lambda x: Soup(x, "html.parser").text)
+#             docs.extend(loader.load())
+        
+#         chunks = text_splitter.create_documents([doc.page_content for doc in docs], metadatas=[doc.metadata for doc in docs])
+        
+#         db = FAISS.from_documents(filter_complex_metadata(chunks), embeddings)
+#         db.save_local(FAISS_INDEX_PATH)
+        
+#         retriever = db.as_retriever()
+#         qa = RetrievalQA.from_chain_type(
+#             llm=model_id,
+#             chain_type="stuff",
+#             retriever=retriever,
+#             verbose=True,
+#             return_source_documents=True,
+#             chain_type_kwargs={
+#                 "verbose": True,
+#                 "memory": memory,
+#                 "prompt": prompt
+#             }
+#         )
+        
+#         process_duration = int((time.time() - start_time) * 1000)
+#         return response_template(
+#             request_id=request.requestId,
+#             trace_id=str(uuid.uuid4()),
+#             process_duration=process_duration,
+#             isResponseImmediate=True,
+#             response={"message": f"Processed {len(docs)} documents from {len(links)} URLs"},
+#             error_code={}
+#         )
+#     except Exception as e:
+#         process_duration = int((time.time() - start_time) * 1000)
+#         return response_template(
+#             request_id=request.requestId,
+#             trace_id=str(uuid.uuid4()),
+#             process_duration=process_duration,
+#             isResponseImmediate=True,
+#             response={},
+#             error_code={"code": "ERROR", "message": str(e)}
+#         )
+
+# def response_template(request_id: str, trace_id: str, process_duration: int,
+#                       isResponseImmediate: bool, response: dict, error_code: dict):
+#     now = datetime.datetime.now().isoformat()
+#     return {
+#         "requestId": request_id,
+#         "traceId": trace_id,
+#         "apiVersion": "1.0",
+#         "service": "LangChainQA",
+#         "datetime": now,
+#         "isResponseImmediate": isResponseImmediate,
+#         "processDuration": process_duration,
+#         "response": response,
+#         "errorCode": error_code,
+#     }
+
+
 # API routes
-@app.post("/ask")
-async def ask_question(request: LangChainRequestCall):
-    start_time = time.time()
-    try:
-        history = [(q, a) for q, a in request.request.payload.history if q or a]
-        response = qa({"query": request.request.payload.query, "history": history})
-        process_duration = int((time.time() - start_time) * 1000)
-        result = response.get('result', response.get('answer', str(response)))
-        
-        return response_template(
-            request_id=request.requestId,
-            trace_id=str(uuid.uuid4()),
-            process_duration=process_duration,
-            isResponseImmediate=True,
-            response={"result": result},
-            error_code={}
-        )
-    except Exception as e:
-        process_duration = int((time.time() - start_time) * 1000)
-        return response_template(
-            request_id=request.requestId,
-            trace_id=str(uuid.uuid4()),
-            process_duration=process_duration,
-            isResponseImmediate=True,
-            response={},
-            error_code={"code": "ERROR", "message": str(e)}
-        )
-
-@app.post("/upload_links")
-async def upload_links(request: UploadRequestCall):
-    start_time = time.time()
-    try:
-        links = request.request.payload.urls
-        global docs, chunks, db, retriever, qa
-        
-        docs = []
-        for url in links:
-            loader = RecursiveUrlLoader(url=url, max_depth=9, extractor=lambda x: Soup(x, "html.parser").text)
-            docs.extend(loader.load())
-        
-        chunks = text_splitter.create_documents([doc.page_content for doc in docs], metadatas=[doc.metadata for doc in docs])
-        
-        db = FAISS.from_documents(filter_complex_metadata(chunks), embeddings)
-        db.save_local(FAISS_INDEX_PATH)
-        
-        retriever = db.as_retriever()
-        qa = RetrievalQA.from_chain_type(
-            llm=model_id,
-            chain_type="stuff",
-            retriever=retriever,
-            verbose=True,
-            return_source_documents=True,
-            chain_type_kwargs={
-                "verbose": True,
-                "memory": memory,
-                "prompt": prompt
-            }
-        )
-        
-        process_duration = int((time.time() - start_time) * 1000)
-        return response_template(
-            request_id=request.requestId,
-            trace_id=str(uuid.uuid4()),
-            process_duration=process_duration,
-            isResponseImmediate=True,
-            response={"message": f"Processed {len(docs)} documents from {len(links)} URLs"},
-            error_code={}
-        )
-    except Exception as e:
-        process_duration = int((time.time() - start_time) * 1000)
-        return response_template(
-            request_id=request.requestId,
-            trace_id=str(uuid.uuid4()),
-            process_duration=process_duration,
-            isResponseImmediate=True,
-            response={},
-            error_code={"code": "ERROR", "message": str(e)}
-        )
-
-def response_template(request_id: str, trace_id: str, process_duration: int,
-                      isResponseImmediate: bool, response: dict, error_code: dict):
-    now = datetime.datetime.now().isoformat()
-    return {
-        "requestId": request_id,
-        "traceId": trace_id,
-        "apiVersion": "1.0",
-        "service": "LangChainQA",
-        "datetime": now,
-        "isResponseImmediate": isResponseImmediate,
-        "processDuration": process_duration,
-        "response": response,
-        "errorCode": error_code,
-    }
-
-
 @app.post("/call")
 async def call_endpoint(request: Request, x_user_id: str = Header(None)):
     start_time = time.time()
@@ -293,6 +272,64 @@ async def call_endpoint(request: Request, x_user_id: str = Header(None)):
         error_code={"status": StatusCodes.PENDING, "reason": "Task is pending"}
     )
 
+@app.post("/result")
+async def result(request: Request, task_request: TaskRequest, x_user_id: str = Header(None), x_request_id: str = Header(None)):
+    start_time = time.time()
+    trace_id = str(uuid.uuid4())
+    result_request_id = str(uuid.uuid4())
+
+    if x_user_id is None or not x_user_id.strip():
+        error_code = {"status": StatusCodes.ERROR, "reason": "No User ID found in headers"}
+        response_data = response_template(result_request_id, trace_id, -1, True, {}, error_code)
+        raise HTTPException(status_code=400, detail=response_data)
+
+    if x_request_id is None or not x_request_id.strip():
+        error_code = {"status": StatusCodes.ERROR, "reason": "No request ID found in headers"}
+        response_data = response_template(result_request_id, trace_id, -1, True, {}, error_code)
+        raise HTTPException(status_code=400, detail=response_data)
+    
+    if task_request.taskId is None or not task_request.taskId.strip():
+        error_code = {"status": StatusCodes.ERROR, "reason": "No task ID found in body"}
+        response_data = response_template(result_request_id, trace_id, -1, True, {}, error_code)
+        raise HTTPException(status_code=400, detail=response_data)
+
+    status_code = task_status.get(task_request.taskId, StatusCodes.ERROR)
+    if status_code == StatusCodes.SUCCESS:
+        # Retrieve the actual result
+        result = task_results.get(task_request.taskId, {"message": "No result found"})
+        response_data = success_response(
+            task_request.taskId, result, "RESULT_DATA", x_request_id, trace_id, int((time.time() - start_time) * 1000)
+        )
+    elif status_code == StatusCodes.PENDING:
+        response_data = response_template(
+            request_id=result_request_id,
+            trace_id=trace_id,
+            process_duration=-1,
+            isResponseImmediate=False,
+            response={"taskId": task_request.taskId},
+            error_code={"status": StatusCodes.PENDING, "reason": "Task is still pending"}
+        )
+    elif status_code == StatusCodes.INPROGRESS:
+        response_data = response_template(
+        request_id=result_request_id,
+        trace_id=trace_id,
+        process_duration=-1,
+        isResponseImmediate=False,
+        response={"taskId": task_request.taskId},
+        error_code={"status": StatusCodes.INPROGRESS, "reason": "Task is processing"}
+    )
+    else:
+        response_data = response_template(
+            request_id=result_request_id,
+            trace_id=trace_id,
+            process_duration=-1,
+            isResponseImmediate=True,
+            response={},
+            error_code={"status": StatusCodes.ERROR, "reason": "Task failed or error occurred"}
+        )
+
+    return response_data
+
 # Define your task processing function
 def process_task(task_id, request_data, user_id, request_id):
     global qa, docs, chunks, db, retriever
@@ -351,26 +388,7 @@ def process_task(task_id, request_data, user_id, request_id):
     print(f"Task {task_id} completed with result: {result}")
     
 
-    # You might want to store the result somewhere so it can be retrieved later
-    # For example, you could use a dictionary to store results:
-    # task_results[task_id] = result
-
-
-    # Optionally, implement a callback function to notify the client of completion
-    # send_callback(user_id, task_id, request_id, process_duration, result)
-
-# Uncomment and implement this function if you need to send a callback notification
-# def send_callback(user_id, task_id, request_id, process_duration, result):
-#     callback_message = {
-#         "taskId": task_id,
-#         "data": result,
-#         "processDuration": process_duration,
-#         "status": "success"
-#     }
-#     # Replace with actual callback URL and send the request
-#     # requests.post("callback_url", json=callback_message)
-
-
+# Response Templates
 def response_template(request_id, trace_id, process_duration, isResponseImmediate, response, error_code):
     return {
         "request_id": request_id,
@@ -395,63 +413,7 @@ def success_response(task_id, data, data_type, request_id, trace_id, process_dur
         error_code={"status": StatusCodes.SUCCESS, "reason": "Task completed successfully"}
     )
 
-@app.post("/result")
-async def result(request: Request, task_request: TaskRequest, x_user_id: str = Header(None), x_request_id: str = Header(None)):
-    start_time = time.time()
-    trace_id = str(uuid.uuid4())
-    result_request_id = str(uuid.uuid4())
 
-    if x_user_id is None or not x_user_id.strip():
-        error_code = {"status": StatusCodes.ERROR, "reason": "No User ID found in headers"}
-        response_data = response_template(result_request_id, trace_id, -1, True, {}, error_code)
-        raise HTTPException(status_code=400, detail=response_data)
-
-    if x_request_id is None or not x_request_id.strip():
-        error_code = {"status": StatusCodes.ERROR, "reason": "No request ID found in headers"}
-        response_data = response_template(result_request_id, trace_id, -1, True, {}, error_code)
-        raise HTTPException(status_code=400, detail=response_data)
-    
-    if task_request.taskId is None or not task_request.taskId.strip():
-        error_code = {"status": StatusCodes.ERROR, "reason": "No task ID found in body"}
-        response_data = response_template(result_request_id, trace_id, -1, True, {}, error_code)
-        raise HTTPException(status_code=400, detail=response_data)
-
-    status_code = task_status.get(task_request.taskId, StatusCodes.ERROR)
-    if status_code == StatusCodes.SUCCESS:
-        # Retrieve the actual result
-        result = task_results.get(task_request.taskId, {"message": "No result found"})
-        response_data = success_response(
-            task_request.taskId, result, "RESULT_DATA", x_request_id, trace_id, int((time.time() - start_time) * 1000)
-        )
-    elif status_code == StatusCodes.PENDING:
-        response_data = response_template(
-            request_id=result_request_id,
-            trace_id=trace_id,
-            process_duration=-1,
-            isResponseImmediate=False,
-            response={"taskId": task_request.taskId},
-            error_code={"status": StatusCodes.PENDING, "reason": "Task is still pending"}
-        )
-    elif status_code == StatusCodes.INPROGRESS:
-        response_data = response_template(
-        request_id=result_request_id,
-        trace_id=trace_id,
-        process_duration=-1,
-        isResponseImmediate=False,
-        response={"taskId": task_request.taskId},
-        error_code={"status": StatusCodes.INPROGRESS, "reason": "Task is processing"}
-    )
-    else:
-        response_data = response_template(
-            request_id=result_request_id,
-            trace_id=trace_id,
-            process_duration=-1,
-            isResponseImmediate=True,
-            response={},
-            error_code={"status": StatusCodes.ERROR, "reason": "Task failed or error occurred"}
-        )
-
-    return response_data
 
 # Gradio interface
 def infer(question, history):
